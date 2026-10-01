@@ -3,8 +3,9 @@
 Schedule (UTC):
   HH:01                 full cycle  - refresh data, recompute signals, trade any
                                        coin whose weight is outside the band
-                                       (targets move at the staggered tranche
-                                       hours 00/08/16 UTC; drift can trigger
+                                       (targets move when the bars opening at
+                                       00/08/16 UTC close, i.e. the 01:01,
+                                       09:01 and 17:01 cycles; drift can trigger
                                        trades in between, exactly as in the
                                        backtest engine)
   HH:16 / HH:31 / HH:46 risk check  - mark to market; if the drawdown brake

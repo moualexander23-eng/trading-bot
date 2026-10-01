@@ -30,7 +30,7 @@ strategy:
   max_gross: 0.95           # longs + short collateral <= 95% of NAV (no leverage)
   rebalance_every: 24       # each tranche refreshes once a day...
   rebalance_hour: 0
-  tranches: 3               # ...staggered at 00, 08, 16 UTC
+  tranches: 3               # ...staggered: bars opening 00/08/16 UTC -> trades at ~01:01/09:01/17:01 UTC
 
 risk:
   # Emergency brake only. A tighter governor (3%/8%) was tested and cut both

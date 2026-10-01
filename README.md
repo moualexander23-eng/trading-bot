@@ -77,8 +77,9 @@ the top N by trailing 7-day USD volume, with at least 800 h of history.
 each coin at ±25% of NAV, and cap total gross (longs + short collateral) at 95% of NAV. There is
 no leverage: on Roostoo, short collateral is funded from USD just like longs.
 
-**Rebalancing.** Targets are refreshed in three staggered tranches (00:00, 08:00, 16:00 UTC), each
-moving one third of the book. A coin is traded only if its weight is off by more than 2% of NAV
+**Rebalancing.** Targets are refreshed in three staggered tranches, each moving one third of the
+book. They use the hourly bars that open at 00:00, 08:00 and 16:00 UTC, so trades happen just after
+those bars close, at ~01:01, 09:01 and 17:01 UTC. A coin is traded only if its weight is off by more than 2% of NAV
 (or it must be closed). The bot still checks hourly, so price drift beyond the band is corrected,
 exactly as in the backtest.
 
