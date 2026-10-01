@@ -121,6 +121,7 @@ class Executor:
                                         float(pos.get("UnrealizedPNL", 0)))
         wallet = bal.get("Wallet") or bal.get("SpotWallet") or {}
         usd = wallet.get("USD", {})
+        log.info("USD wallet %s | shorts %s", usd, {c: (s.qty, s.collateral) for c, s in shorts.items()})
         holdings, free = {}, {}
         for coin, v in wallet.items():
             if coin == "USD":

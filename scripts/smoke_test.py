@@ -43,7 +43,23 @@ def main() -> None:
     print("pending count             ", c.pending_count())
     oid = r.get("OrderDetail", {}).get("OrderID")
     print("cancel                    ", c.cancel_order(order_id=oid) if oid else "no order id")
-    print("\nAll four calls should show success=True. Check logs/api.log if not.")
+
+    # Short round trip: is shorting allowed, and how is collateral reported in the wallet?
+    def usd():
+        b = c.balance()
+        return (b.get("Wallet") or b.get("SpotWallet") or {}).get("USD")
+    print("\nUSD wallet before short   ", usd())
+    so = c.short_open("BTC/USD", "25")
+    print("short open $25 collateral ", so)
+    if not so.get("Success"):
+        print("\nShorts rejected on this account -> the bot will automatically run long-only.")
+        return
+    time.sleep(2)
+    print("USD wallet while short    ", usd())
+    print("short positions           ", c.short_positions())
+    print("short close               ", c.short_close("BTC/USD"))
+    print("USD wallet after close    ", usd())
+    print("\nAll calls should show Success=True. Check logs/api.log if not.")
 
 
 if __name__ == "__main__":
