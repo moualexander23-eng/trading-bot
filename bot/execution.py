@@ -101,6 +101,7 @@ class Executor:
                  trade_log: TradeLogger, shorts_enabled: bool = True):
         self.client, self.pairs, self.p, self.trade_log = client, pairs, params, trade_log
         self.shorts_enabled = shorts_enabled
+        self._resting: list = []
 
     # ---------- state ----------
     def snapshot(self) -> Snapshot | None:
@@ -205,7 +206,20 @@ class Executor:
                 price = format_decimal(touch, info.price_precision)
             resp = self.client.place_order(info.pair, o["side"], o["qty"], order_type, price)
         self.trade_log.order(o, order_type if o["side"] in ("BUY", "SELL") else "MARKET", price, resp, reason)
+        detail = resp.get("OrderDetail") or {}
+        if detail.get("Status") == "PENDING":
+            self._resting.append(detail.get("OrderID"))
+        elif resp.get("Success"):
+            self.trade_log.fill(o["coin"], o["side"], resp)
         return resp
+
+    def _reconcile_resting(self) -> None:
+        """Record the final state (fill price, fee, maker/taker) of limit orders that rested."""
+        for oid in self._resting:
+            r = self.client.query_order(order_id=oid)
+            for d in r.get("OrderMatched") or []:
+                self.trade_log.fill(d.get("Pair", "").split("/")[0], d.get("Side", ""), {"OrderDetail": d})
+        self._resting = []
 
     def _fit(self, o: dict, usd_avail: float, snap: Snapshot) -> dict | None:
         """Shrink a cash-using order so it fits in available USD (keeping a fee buffer)."""
@@ -243,11 +257,13 @@ class Executor:
             log.info("rebalance: portfolio within band, no orders")
             return 0
         sent = 0
+        self._resting = []
         if self.p.use_limit_orders and any(o["side"] in ("BUY", "SELL") for o in orders):
             sent = self._pass(orders, "LIMIT", snap, reason)
             if sent:
                 time.sleep(self.p.limit_wait_seconds)
                 self.client.cancel_order()  # cancel every still-pending order
+                self._reconcile_resting()
                 snap = self.snapshot()
                 if snap is None:
                     return sent

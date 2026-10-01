@@ -25,6 +25,7 @@ class PaperClient:
         self.coins: dict[str, float] = {}
         self.shorts: dict[str, dict] = {}       # coin -> {qty, entry, collateral}
         self.pending: dict[int, dict] = {}
+        self.cancelled: dict[int, dict] = {}
         self.ids = itertools.count(1)
         self._tick: dict = {}
         self._tick_time = 0.0
@@ -87,13 +88,19 @@ class PaperClient:
             "OrderID": oid, "Pair": pair, "Status": "FILLED", "Role": "TAKER", "Side": side, "Type": "MARKET",
             "FilledQuantity": qty, "FilledAverPrice": px, "CommissionChargeValue": fee}}
 
-    def query_order(self, **_) -> dict:
-        return {"Success": False, "ErrMsg": "no order matched"}
+    def query_order(self, order_id=None, **_) -> dict:
+        o = self.cancelled.get(int(order_id)) if order_id else None
+        if not o:
+            return {"Success": False, "ErrMsg": "no order matched"}
+        return {"Success": True, "OrderMatched": [{"OrderID": int(order_id), "Pair": o["pair"], "Side": o["side"],
+                                                   "Status": "CANCELED", "Role": "MAKER", "FilledQuantity": 0,
+                                                   "FilledAverPrice": 0, "CommissionChargeValue": 0}]}
 
     def cancel_order(self, order_id=None, pair=None) -> dict:
         ids = list(self.pending) if order_id is None else [int(order_id)]
         for i in ids:
-            self.pending.pop(i, None)
+            if i in self.pending:
+                self.cancelled[i] = self.pending.pop(i)
         return {"Success": True, "ErrMsg": "", "CanceledList": ids}
 
     def short_open(self, pair: str, collateral: str) -> dict:

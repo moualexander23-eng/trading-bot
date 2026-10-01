@@ -51,6 +51,9 @@ class TradeLogger:
             "success", "order_id", "status", "filled_qty", "avg_price", "commission", "err", "reason"])
         self.equity = CsvAppender(os.path.join(log_dir, "equity.csv"), [
             "time", "nav", "usd", "gross", "peak", "drawdown", "dd_mult", "breadth", "n_positions", "event"])
+        self.fills = CsvAppender(os.path.join(log_dir, "fills.csv"), [
+            "time", "order_id", "pair", "side", "status", "role", "filled_qty", "avg_price", "notional",
+            "commission", "fee_pct"])
         self.signals = CsvAppender(os.path.join(log_dir, "signals.csv"), [
             "time", "breadth", "targets", "scores"])
         self.log = logging.getLogger("trades")
@@ -73,6 +76,22 @@ class TradeLogger:
         self.orders.write(row)
         self.log.info("%s %s %s %s @%s -> %s %s %s", order_type, o["side"], o["qty"], row["pair"],
                       price or "mkt", row["success"], row["status"], row["err"])
+
+    def fill(self, coin: str, side: str, resp: dict) -> None:
+        """Executed (or finally cancelled) order with its actual price, fee and maker/taker role."""
+        d = resp.get("OrderDetail")
+        if d is None:  # /v6 short endpoints
+            d = {"OrderID": resp.get("ID", ""), "Status": resp.get("Status") or "CLOSED", "Role": "TAKER",
+                 "FilledQuantity": resp.get("ShortQty", resp.get("ClosedQty", 0)),
+                 "FilledAverPrice": resp.get("EntryPrice", resp.get("ClosePrice", 0)),
+                 "CommissionChargeValue": resp.get("OpenFee", resp.get("CloseFee", 0))}
+        qty, px = float(d.get("FilledQuantity") or 0), float(d.get("FilledAverPrice") or 0)
+        fee = float(d.get("CommissionChargeValue") or 0)
+        notional = qty * px
+        self.fills.write({"time": utcnow(), "order_id": d.get("OrderID", ""), "pair": f"{coin}/USD", "side": side,
+                          "status": d.get("Status", ""), "role": d.get("Role", ""), "filled_qty": qty,
+                          "avg_price": px, "notional": round(notional, 2), "commission": round(fee, 6),
+                          "fee_pct": round(fee / notional * 100, 4) if notional else ""})
 
     def equity_row(self, **kw) -> None:
         self.equity.write({"time": utcnow(), **kw})
