@@ -1,0 +1,57 @@
+# Strategy, risk and execution parameters. API keys live in .env, never here.
+# Every change to this file is a strategy change: commit it with a message
+# explaining why (judges review the commit history).
+
+strategy:
+  # Liquid crypto only. Excluded: tokenized stocks (Binance history starts
+  # Jun-2026, too short to validate), PAXG (gold), and coins whose Roostoo
+  # tick size makes the spread > ~5 bps (PEPE, SHIB, BONK, FLOKI, ...).
+  candidates: [BTC, ETH, SOL, XRP, BNB, DOGE, ADA, AVAX, LINK, LTC, NEAR, SUI, UNI, AAVE,
+               TRX, HBAR, XLM, FIL, APT, FET, CRV, SEI, TAO, ENA, WLD, ONDO, ZEC, TON,
+               PENDLE, WIF, CAKE, POL, VIRTUAL, TRUMP, PENGU, PUMP, ASTER, XPL, ZEN, S, PLUME]
+  vol_halflife: 72          # hours, EWMA volatility estimate
+  min_history: 800          # hours of history before a coin is eligible
+
+  # Trend sleeve: long-only, multi-horizon time-series trend
+  trend_universe: 15        # most liquid coins considered
+  trend_lookbacks: [168, 336, 720]   # 7, 14, 30 days
+  trend_target_vol: 0.25    # annualised volatility target for the sleeve
+  trend_assumed_corr: 0.7
+
+  # Momentum sleeve: market-neutral cross-sectional momentum
+  mom_universe: 25
+  mom_lookback: 336         # 14-day relative return
+  mom_k: 5                  # long top 5, short bottom 5
+  mom_gross: 0.6            # 30% long + 30% short
+  allow_shorts: true
+
+  # Portfolio
+  max_weight: 0.25          # per-coin cap (absolute)
+  max_gross: 0.95           # longs + short collateral <= 95% of NAV (no leverage)
+  rebalance_every: 24       # each tranche refreshes once a day...
+  rebalance_hour: 0
+  tranches: 3               # ...staggered at 00, 08, 16 UTC
+
+risk:
+  # Emergency brake only. A tighter governor (3%/8%) was tested and cut both
+  # return and risk-adjusted return: it de-risks at local lows.
+  dd_soft: 0.08
+  dd_hard: 0.15
+  dd_floor: 0.30
+
+execution:
+  rebalance_band: 0.02      # ignore weight changes < 2% of NAV
+  min_order_usd: 50
+  use_limit_orders: true    # maker first (0.05%), market fallback (0.1%)
+  limit_wait_seconds: 120
+  max_orders_per_cycle: 16
+
+bot:
+  cycle_minute: 1
+  history_hours: 1000
+  state_file: logs/state.json
+  log_dir: logs
+
+backtest:
+  backtest_fee: 0.001       # conservative: every fill assumed taker
+  backtest_slippage: 0.0003
