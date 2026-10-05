@@ -1,28 +1,34 @@
 # Roostoo Quant Trading Bot — Team Joaquin (USYD)
 
+[![tests](https://github.com/moualexander23-eng/trading-bot/actions/workflows/tests.yml/badge.svg)](https://github.com/moualexander23-eng/trading-bot/actions/workflows/tests.yml)
+
 An autonomous crypto trading bot for the SIG × Roostoo APAC University Quant Trading Hackathon.
 It runs on AWS EC2, trades spot longs and shorts on the Roostoo mock exchange through its REST
 API, and logs every decision so it can be audited.
 
 **In one sentence:** a two-sleeve, volatility-aware portfolio. A *long-only time-series trend*
-sleeve participates in sustained rallies and steps aside in sell-offs. A *market-neutral
-cross-sectional momentum* sleeve earns relative-strength persistence regardless of market
-direction. Both are rebalanced slowly, with maker-first execution, so fees don't eat the edge.
+sleeve participates in sustained rallies and steps aside in sell-offs. A *long/short
+cross-sectional momentum* sleeve takes directional views on individual coins: long the
+strongest, short the weakest, held for days. Its longs and shorts roughly offset, so it earns
+relative-strength persistence whatever the market does. Both sleeves are rebalanced slowly, with
+maker-first execution, so fees don't eat the edge.
 
 ---
 
 ## 1. Why this strategy
 
-The competition ranks teams on **return** first, then on **0.4·Sortino + 0.3·Sharpe + 0.3·Calmar**
-over a 14-day live window. We designed for that objective:
+Finalists are screened on return, then **50% on a composite risk-adjusted score
+(0.4·Sortino + 0.3·Sharpe + 0.3·Calmar) and 50% on this repository**. Judges also ask whether a
+strategy's edge would hold up in real markets (see [§5](#5-why-the-edge-is-real-not-a-simulator-artefact)).
+We designed for that objective:
 
 | Objective | Design response |
 |---|---|
 | Positive return over 14 days | Two independent, persistent return sources (trend + relative momentum) |
-| High Sortino / Calmar (penalise downside & drawdown) | Trend sleeve goes to cash in downtrends; momentum sleeve is market-neutral, so a crash is not our P&L |
+| High Sortino / Calmar (penalise downside & drawdown) | Trend sleeve goes to cash in downtrends; momentum sleeve's longs and shorts offset, so a market-wide crash is not our P&L |
 | High Sharpe | The sleeves' daily returns are ~0.1 correlated, so combining them cuts volatility more than return |
 | Fees (0.1% taker / 0.05% maker) | Daily (staggered) rebalancing, a 2% no-trade band, limit orders first |
-| "No HFT / market-making / arbitrage" rule | Directional and relative-value positions held for days, at most a few orders per hour |
+| "No HFT / market-making / arbitrage" rule | Every position is a directional view held for days (~5 days on average). About 12 orders a day, all at 3 scheduled rebalances. We never quote both sides of a market and never trade a coin back and forth for the spread |
 | "Active every trading day" rule | Three staggered rebalances per day guarantee daily, strategy-driven trades |
 
 ## 2. How we got here (research log)
@@ -68,10 +74,11 @@ the top N by trailing 7-day USD volume, with at least 800 h of history.
    constant-correlation (ρ = 0.7) model, so exposure falls automatically when markets get wild.
    In a broad sell-off every score turns negative and the sleeve goes to cash.
 
-**Momentum sleeve (market-neutral, long/short)** — top 25 coins by liquidity
+**Momentum sleeve (long/short relative strength)** — top 25 coins by liquidity
 1. Rank coins by 14-day return *relative to the universe average*.
 2. Long the top 5 and short the bottom 5, inverse-volatility weighted within each side.
-3. Gross 60% (30% long, 30% short), so net market exposure is ~0.
+3. Gross 60% (30% long, 30% short), so net market exposure is ~0. The 14-day ranking changes
+   slowly, so positions are typically held for several days.
 
 **Portfolio construction.** Sum the sleeves (a coin can be in both, so they may net off), cap
 each coin at ±25% of NAV, and cap total gross (longs + short collateral) at 95% of NAV. There is
@@ -136,17 +143,36 @@ python -m backtest.download_data --start 2023-01-01   # ~10 min, Binance public 
 python -m backtest.evaluate                           # writes backtest/results/
 ```
 
-## 5. Transaction costs: maker vs taker
+## 5. Why the edge is real, not a simulator artefact
+
+The organizers asked teams to focus on edges that "come from the market itself". Ours do:
+
+- **Documented return sources.** Time-series momentum (Moskowitz, Ooi & Pedersen, *JFE* 2012)
+  and cross-sectional momentum (Jegadeesh & Titman, *JF* 1993) are among the most replicated
+  effects in finance. Both have been documented in crypto specifically (Liu & Tsyvinski, *RFS*
+  2021; Liu, Tsyvinski & Wu, *JF* 2022).
+- **Tested on a real exchange's prices.** The backtest uses Binance hourly data, not Roostoo's
+  simulator. It charges **taker fees plus slippage on every fill**, so the result does not
+  depend on maker fills, queue position or any matching-engine behaviour.
+- **Execution caveat, stated plainly.** Live, ~55% of our filled notional is maker. A real order
+  book would fill fewer passive orders at the touch, and with more adverse selection, because
+  queues are real. That is why the backtest ignores the maker discount entirely: the strategy
+  is viable with 100% taker execution.
+- **Capacity.** We trade only the 25 most liquid coins. Our positions ($2k–$25k) are a tiny
+  fraction of each coin's daily volume ($10M–$1B+), so the same trades could be executed on a
+  real exchange without moving the price.
+
+## 6. Transaction costs: maker vs taker
 
 | Lever | Effect |
 |---|---|
 | Slow signals (7–30 day horizons) + daily tranches | Turnover ~37% of NAV/day, vs ~200% for our first hourly version |
 | 2% no-trade band | Skips small rebalances where the fee exceeds the benefit |
-| **Maker-first execution** | Spot orders are first posted as LIMIT at the touch (buy @ best bid, sell @ best ask), paying 0.05% if filled. After 120 s anything unfilled is cancelled, and the residual is completed at MARKET (0.1%) |
+| **Maker-first execution** | Spot orders are first posted as LIMIT at the touch (buy @ best bid, sell @ best ask), paying 0.05% if filled. After 120 s anything unfilled is cancelled, and the residual is completed at MARKET (0.1%). This only executes our *own* rebalance in one direction; it is not market making (we never quote both sides) |
 | Shorts at market | Roostoo charges 0.1% on short opens/closes regardless of order type, so there is no point resting them |
 | Backtest charges taker on everything | Live costs should come in *below* the backtest |
 
-## 6. Risk management
+## 7. Risk management
 
 | Layer | Rule |
 |---|---|
@@ -157,7 +183,7 @@ python -m backtest.evaluate                           # writes backtest/results/
 | Liquidity | Only top-volume coins; coins with wide Roostoo spreads (tick size > ~5 bp) excluded from the candidate list |
 | Operational | Rate limiter (25 calls/min vs 30 limit); retries with backoff; **order calls are never blindly retried** (no double fills); stray pending orders cancelled every cycle; server-clock sync for signed requests; stale-data guard (a coin with no fresh price is not traded); falls back to Roostoo ticker if Binance is unreachable; auto long-only if the exchange rejects shorts; systemd restarts the process on crash or reboot; state (peak NAV) persisted to disk |
 
-## 7. Trading engine
+## 8. Trading engine
 
 ```
              ┌─────────────── every hour at HH:01 UTC ───────────────┐
@@ -193,7 +219,7 @@ klines       (hourly bars,      (target         (drawdown    (diff vs        (ro
 - `signals.csv`: full target-weight and score vectors every hour.
 - `api.log`: every API call with endpoint, success flag, latency and error message.
 
-## 8. Running it
+## 9. Running it
 
 ```bash
 pip install -r requirements.txt
@@ -207,7 +233,7 @@ python -m bot.main                # live loop (account chosen by BOT_ACCOUNT in 
 On EC2 (Amazon Linux 2023): `bash deploy/install.sh`, create `.env`, then
 `sudo systemctl enable --now roostoo-bot`. Use `bash deploy/update.sh` to deploy a new commit.
 
-## 9. Limitations and next steps
-- Validate the maker fill rate live, and tune `limit_wait_seconds` from `trades.csv`.
+## 10. Limitations and next steps
+- The live maker fill rate on the simulator is likely optimistic versus a real queue (see §5). We track it in `fills.csv` but do not rely on it.
 - Estimate the correlation used in vol targeting dynamically instead of a constant ρ = 0.7.
 - Add funding-rate / open-interest data (Binance futures) as a crowding filter on the trend sleeve.
